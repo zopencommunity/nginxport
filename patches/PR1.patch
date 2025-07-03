@@ -1,0 +1,414 @@
+diff --git c/src/core/ngx_config.h w/src/core/ngx_config.h
+index 1861be601..c5f42069c 100644
+--- c/src/core/ngx_config.h
++++ w/src/core/ngx_config.h
+@@ -29,6 +29,9 @@
+ #elif (NGX_SOLARIS)
+ #include <ngx_solaris_config.h>
+ 
++#elif (__MVS__)
++#include <ngx_zos_config.h>
++
+ 
+ #elif (NGX_DARWIN)
+ #include <ngx_darwin_config.h>
+diff --git c/src/core/ngx_inet.h w/src/core/ngx_inet.h
+index 19050fc75..03dcf44f3 100644
+--- c/src/core/ngx_inet.h
++++ w/src/core/ngx_inet.h
+@@ -16,11 +16,11 @@
+ #define NGX_INET_ADDRSTRLEN   (sizeof("255.255.255.255") - 1)
+ #define NGX_INET6_ADDRSTRLEN                                                 \
+     (sizeof("ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255") - 1)
++
++#if (NGX_HAVE_UNIX_DOMAIN)
+ #define NGX_UNIX_ADDRSTRLEN                                                  \
+     (sizeof("unix:") - 1 +                                                   \
+      sizeof(struct sockaddr_un) - offsetof(struct sockaddr_un, sun_path))
+-
+-#if (NGX_HAVE_UNIX_DOMAIN)
+ #define NGX_SOCKADDR_STRLEN   NGX_UNIX_ADDRSTRLEN
+ #elif (NGX_HAVE_INET6)
+ #define NGX_SOCKADDR_STRLEN   (NGX_INET6_ADDRSTRLEN + sizeof("[]:65535") - 1)
+diff --git c/src/os/unix/ngx_alloc.c w/src/os/unix/ngx_alloc.c
+index 5c2f78702..7f4443535 100644
+--- c/src/os/unix/ngx_alloc.c
++++ w/src/os/unix/ngx_alloc.c
+@@ -19,10 +19,14 @@ ngx_alloc(size_t size, ngx_log_t *log)
+ {
+     void  *p;
+ 
++#ifdef __MVS__
++    if (size == 0)
++      size = 1;
++#endif
+     p = malloc(size);
+     if (p == NULL) {
+         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+-                      "malloc(%uz) failed", size);
++                      "HERE malloc(%uz) failed", size);
+     }
+ 
+     ngx_log_debug2(NGX_LOG_DEBUG_ALLOC, log, 0, "malloc: %p:%uz", p, size);
+@@ -36,6 +40,10 @@ ngx_calloc(size_t size, ngx_log_t *log)
+ {
+     void  *p;
+ 
++#ifdef __MVS__
++    if (size == 0)
++      size = 1;
++#endif
+     p = ngx_alloc(size, log);
+ 
+     if (p) {
+@@ -51,6 +59,9 @@ ngx_calloc(size_t size, ngx_log_t *log)
+ void *
+ ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
+ {
++#ifdef __MVS__ 
++    return ngx_alloc(size, log);
++#endif
+     void  *p;
+     int    err;
+ 
+diff --git c/src/os/unix/ngx_errno.c w/src/os/unix/ngx_errno.c
+index ca23b2d3f..2614aa55e 100644
+--- c/src/os/unix/ngx_errno.c
++++ w/src/os/unix/ngx_errno.c
+@@ -172,6 +172,8 @@ ngx_strerror_init(void)
+ 
+     len = (ngx_last_error - ngx_first_error) * sizeof(ngx_str_t);
+ 
++    if (len == 0)
++      len = 1;
+     ngx_sys_errlist = malloc(len);
+     if (ngx_sys_errlist == NULL) {
+         goto failed;
+@@ -187,6 +189,8 @@ ngx_strerror_init(void)
+ 
+         len = ngx_strlen(msg);
+ 
++        if (len == 0)
++          len = 1;
+         p = malloc(len);
+         if (p == NULL) {
+             goto failed;
+diff --git c/src/os/unix/ngx_process.c w/src/os/unix/ngx_process.c
+index 15680237a..5fa40d3a6 100644
+--- c/src/os/unix/ngx_process.c
++++ w/src/os/unix/ngx_process.c
+@@ -143,12 +143,14 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
+         }
+ 
+         on = 1;
++#ifndef __MVS__
+         if (ioctl(ngx_processes[s].channel[0], FIOASYNC, &on) == -1) {
+             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+                           "ioctl(FIOASYNC) failed while spawning \"%s\"", name);
+             ngx_close_channel(ngx_processes[s].channel, cycle->log);
+             return NGX_INVALID_PID;
+         }
++#endif
+ 
+         if (fcntl(ngx_processes[s].channel[0], F_SETOWN, ngx_pid) == -1) {
+             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
+diff --git c/src/os/unix/ngx_shmem.c w/src/os/unix/ngx_shmem.c
+index 3ec7cbf1f..1c8d8ab68 100644
+--- c/src/os/unix/ngx_shmem.c
++++ w/src/os/unix/ngx_shmem.c
+@@ -89,7 +89,7 @@ ngx_shm_alloc(ngx_shm_t *shm)
+ {
+     int  id;
+ 
+-    id = shmget(IPC_PRIVATE, shm->size, (SHM_R|SHM_W|IPC_CREAT));
++    id = shmget(IPC_PRIVATE, shm->size, (IPC_CREAT));
+ 
+     if (id == -1) {
+         ngx_log_error(NGX_LOG_ALERT, shm->log, ngx_errno,
+@@ -123,4 +123,24 @@ ngx_shm_free(ngx_shm_t *shm)
+     }
+ }
+ 
++#else
++
++ngx_int_t ngx_shm_alloc(ngx_shm_t *shm) {
++    shm->addr = (uint8_t *)malloc(shm->size);
++
++    if (shm->addr == NULL) {
++        return NGX_ERROR;
++    }
++
++    memset(shm->addr, 0, shm->size);
++    return NGX_OK;
++}
++
++void ngx_shm_free(ngx_shm_t *shm) {
++    if (shm->addr != NULL) {
++        free(shm->addr);
++        shm->addr = NULL;
++    }
++}
++
+ #endif
+diff --git c/src/os/unix/ngx_zos_config.h w/src/os/unix/ngx_zos_config.h
+new file mode 100644
+index 000000000..1f9c5318f
+--- /dev/null
++++ w/src/os/unix/ngx_zos_config.h
+@@ -0,0 +1,106 @@
++
++/*
++ * Copyright (C) Igor Sysoev
++ * Copyright (C) Nginx, Inc.
++ */
++
++
++#ifndef _NGX_FREEBSD_CONFIG_H_INCLUDED_
++#define _NGX_FREEBSD_CONFIG_H_INCLUDED_
++
++
++#include <sys/types.h>
++#include <sys/time.h>
++#include <unistd.h>
++#include <stdarg.h>
++#include <stddef.h>             /* offsetof() */
++#include <stdio.h>
++#include <stdlib.h>
++#include <ctype.h>
++#include <errno.h>
++#include <string.h>
++#include <signal.h>
++#include <pwd.h>
++#include <grp.h>
++#include <dirent.h>
++#include <glob.h>
++#include <time.h>
++#include <sys/param.h>          /* ALIGN() */
++#include <sys/mount.h>          /* statfs() */
++
++#include <sys/stat.h>
++#include <fcntl.h>
++
++#include <sys/wait.h>
++#include <sys/mman.h>
++#include <sys/resource.h>
++#include <sched.h>
++
++#include <sys/socket.h>
++#include <netinet/in.h>
++#include <netinet/tcp.h>        /* TCP_NODELAY, TCP_NOPUSH */
++#include <arpa/inet.h>
++#include <netdb.h>
++#include <resolv.h>
++
++#include <dlfcn.h>
++
++
++
++#include <ngx_auto_config.h>
++
++
++#if (NGX_HAVE_POSIX_SEM)
++#include <semaphore.h>
++#endif
++
++
++#if (NGX_HAVE_POLL)
++#include <poll.h>
++#endif
++
++
++#if (NGX_HAVE_KQUEUE)
++#include <sys/event.h>
++#endif
++
++
++
++#define NGX_LISTEN_BACKLOG        -1
++
++
++#ifdef __DragonFly__
++#define NGX_KEEPALIVE_FACTOR      1000
++#endif
++
++
++#ifndef IOV_MAX
++#define IOV_MAX   1024
++#endif
++
++
++#ifndef NGX_HAVE_INHERITED_NONBLOCK
++#define NGX_HAVE_INHERITED_NONBLOCK  1
++#endif
++
++
++#define NGX_HAVE_OS_SPECIFIC_INIT    1
++#define NGX_HAVE_DEBUG_MALLOC        1
++
++
++extern char **environ;
++
++#undef NGX_HAVE_UNIX_DOMAIN
++#undef NGX_HAVE_DEBUG_MALLOC
++#undef NGX_HAVE_FIONREAD
++#undef NGX_HAVE_FIONBIO
++#undef NGX_HAVE_STATVFS
++#undef NGX_HAVE_OS_SPECIFIC_INIT
++#undef NGX_HAVE_PWRITEV
++#undef NGX_HAVE_STRERRORDESC_NP
++#undef NGX_HAVE_SETPROCTITLE
++
++#define ngx_debug_init()
++
++
++#endif /* _NGX_FREEBSD_CONFIG_H_INCLUDED_ */
+diff --git c/src/os/unix/ngx_zos_init.c w/src/os/unix/ngx_zos_init.c
+new file mode 100644
+index 000000000..7824735d0
+--- /dev/null
++++ w/src/os/unix/ngx_zos_init.c
+@@ -0,0 +1,144 @@
++
++/*
++ * Copyright (C) Igor Sysoev
++ * Copyright (C) Nginx, Inc.
++ */
++
++
++#include <ngx_config.h>
++#include <ngx_core.h>
++#include <nginx.h>
++
++
++ngx_int_t   ngx_ncpu;
++ngx_int_t   ngx_max_sockets;
++ngx_uint_t  ngx_inherited_nonblocking;
++ngx_uint_t  ngx_tcp_nodelay_and_tcp_nopush;
++
++
++struct rlimit  rlmt;
++
++
++ngx_os_io_t ngx_os_io = {
++    ngx_unix_recv,
++    ngx_readv_chain,
++    ngx_udp_unix_recv,
++    ngx_unix_send,
++    ngx_udp_unix_send,
++    ngx_udp_unix_sendmsg_chain,
++    ngx_writev_chain,
++    0
++};
++
++
++ngx_int_t
++ngx_os_init(ngx_log_t *log)
++{
++    ngx_time_t  *tp;
++    ngx_uint_t   n;
++#if (NGX_HAVE_LEVEL1_DCACHE_LINESIZE)
++    long         size;
++#endif
++
++#if (NGX_HAVE_OS_SPECIFIC_INIT)
++    if (ngx_os_specific_init(log) != NGX_OK) {
++        return NGX_ERROR;
++    }
++#endif
++
++    if (ngx_init_setproctitle(log) != NGX_OK) {
++        return NGX_ERROR;
++    }
++
++    ngx_pagesize = getpagesize();
++    ngx_cacheline_size = NGX_CPU_CACHE_LINE;
++
++    for (n = ngx_pagesize; n >>= 1; ngx_pagesize_shift++) { /* void */ }
++
++#if (NGX_HAVE_SC_NPROCESSORS_ONLN)
++    if (ngx_ncpu == 0) {
++        ngx_ncpu = sysconf(_SC_NPROCESSORS_ONLN);
++    }
++#endif
++
++    if (ngx_ncpu < 1) {
++        ngx_ncpu = 1;
++    }
++
++#if (NGX_HAVE_LEVEL1_DCACHE_LINESIZE)
++    size = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
++    if (size > 0) {
++        ngx_cacheline_size = size;
++    }
++#endif
++
++    ngx_cpuinfo();
++
++    if (getrlimit(RLIMIT_NOFILE, &rlmt) == -1) {
++        ngx_log_error(NGX_LOG_ALERT, log, errno,
++                      "getrlimit(RLIMIT_NOFILE) failed");
++        return NGX_ERROR;
++    }
++
++    ngx_max_sockets = (ngx_int_t) rlmt.rlim_cur;
++
++#if (NGX_HAVE_INHERITED_NONBLOCK || NGX_HAVE_ACCEPT4)
++    ngx_inherited_nonblocking = 1;
++#else
++    ngx_inherited_nonblocking = 0;
++#endif
++
++    tp = ngx_timeofday();
++    srandom(((unsigned) ngx_pid << 16) ^ tp->sec ^ tp->msec);
++
++    return NGX_OK;
++}
++
++
++void
++ngx_os_status(ngx_log_t *log)
++{
++    ngx_log_error(NGX_LOG_NOTICE, log, 0, NGINX_VER_BUILD);
++
++#ifdef NGX_COMPILER
++    ngx_log_error(NGX_LOG_NOTICE, log, 0, "built by " NGX_COMPILER);
++#endif
++
++#if (NGX_HAVE_OS_SPECIFIC_INIT)
++    ngx_os_specific_status(log);
++#endif
++
++    ngx_log_error(NGX_LOG_NOTICE, log, 0,
++                  "getrlimit(RLIMIT_NOFILE): %r:%r",
++                  rlmt.rlim_cur, rlmt.rlim_max);
++}
++
++
++#if 0
++
++ngx_int_t
++ngx_posix_post_conf_init(ngx_log_t *log)
++{
++    ngx_fd_t  pp[2];
++
++    if (pipe(pp) == -1) {
++        ngx_log_error(NGX_LOG_EMERG, log, ngx_errno, "pipe() failed");
++        return NGX_ERROR;
++    }
++
++    if (dup2(pp[1], STDERR_FILENO) == -1) {
++        ngx_log_error(NGX_LOG_EMERG, log, errno, "dup2(STDERR) failed");
++        return NGX_ERROR;
++    }
++
++    if (pp[1] > STDERR_FILENO) {
++        if (close(pp[1]) == -1) {
++            ngx_log_error(NGX_LOG_EMERG, log, errno, "close() failed");
++            return NGX_ERROR;
++        }
++    }
++
++    return NGX_OK;
++}
++
++#endif

@@ -2,7 +2,7 @@
 NGINX_VERSION="1.29.4"
 
 export ZOPEN_STABLE_URL="https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz"
-export ZOPEN_STABLE_DEPS="zoslib make libpcre2 zlib openssl"
+export ZOPEN_STABLE_DEPS="zoslib make libpcre2 zlib openssl perl which"
 export ZOPEN_DEV_URL="https://github.com/nginx/nginx.git"
 export ZOPEN_DEV_DEPS="zoslib make libpcre2 zlib openssl"
 export ZOPEN_BUILD_LINE="STABLE"

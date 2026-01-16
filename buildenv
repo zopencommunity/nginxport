@@ -1,18 +1,37 @@
-export ZOPEN_STABLE_URL="https://github.com/nginx/nginx.git"
-export ZOPEN_STABLE_TAG="release-1.27.4"
-export ZOPEN_STABLE_DEPS="zoslib make libpcre2 zlib openssl"
+# bump: nginx-version /NGINX_VERSION="(.*)"/ https://nginx.org/en/download.html|re:/nginx-([\d.]+)/$1/|semver:*
+NGINX_VERSION="1.29.4"
+
+export ZOPEN_STABLE_URL="https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz"
+export ZOPEN_STABLE_DEPS="zoslib make libpcre2 zlib openssl perl which"
 export ZOPEN_DEV_URL="https://github.com/nginx/nginx.git"
 export ZOPEN_DEV_DEPS="zoslib make libpcre2 zlib openssl"
 export ZOPEN_BUILD_LINE="STABLE"
 
-export ZOPEN_CONFIGURE="./auto/configure"
 export ZOPEN_CONFIGURE_MINIMAL=Y
 #export ZOPEN_CONFIGURE_OPTS="--with-cc=\${CC} --prefix=\${ZOPEN_INSTALL_DIR} --with-ld-opt=\"\$LDFLAGS \$LIBS\" --with-pcre=\"\$PRCE2_HOME\" --with-zlib=\"$ZLIB_HOME\" --with-openssl=\"$OPENSSL_HOME\""
-export ZOPEN_CONFIGURE_OPTS="--with-cc=\${CC} --prefix=\${ZOPEN_INSTALL_DIR} --with-ld-opt=\"\$LDFLAGS \$LIBS\" --with-cc-opt=\"\$CPPFLAGS \$CFLAGS\" --without-select_module --with-poll_module --with-http_ssl_module --with-debug"
+export ZOPEN_CONFIGURE_OPTS="--with-cc=\${CC} --prefix=\${ZOPEN_INSTALL_DIR} --with-ld-opt=\"\$LDFLAGS \$LIBS\" --with-cc-opt=\"\$CPPFLAGS \$CFLAGS\"  \
+      --with-http_ssl_module \
+      --with-debug \
+      --with-http_addition_module \
+      --with-http_auth_request_module \
+      --with-http_gunzip_module \
+      --with-http_gzip_static_module \
+      --with-http_random_index_module \
+      --with-http_realip_module \
+      --with-http_secure_link_module \
+      --with-http_slice_module \
+      --with-http_ssl_module \
+      --with-http_stub_status_module \
+      --with-http_sub_module \
+      --with-http_v2_module"
+
+
 export ZOPEN_COMP=CLANG
 export ZOPEN_MAKE_MINIMAL=Y
 
 export ZOPEN_CHECK="zopen_check"
+export ZOPEN_CHECK_MINIMAL="yes"
+export ZOPEN_EXTRA_CPPFLAGS="-D_POSIX_C_SOURCE=200809L -D__XPLAT=1 -D_OPEN_SYS_IF_EXT -D_OPEN_SYS_SOCK_EXT3 -D_OPEN_SYS_SOCK_IPV6"
 
 zopen_pre_build()
 {
@@ -36,8 +55,7 @@ zopen_check_results()
   # Echo the following information to gauge build health
   echo "actualFailures:0"
   echo "totalTests:1"
-  
-  echo "expectedTotalTests:1"
+  echo "expectedFailures:0"
 }
 
 zopen_append_to_env()
@@ -54,5 +72,5 @@ zopen_get_version()
 {
   # Modify to echo the version of your tool/library
   # Rather than hardcoding the version, obtain the version by running the tool/library
-  echo "1.0.0"
+  echo "${NGINX_VERSION}"
 }

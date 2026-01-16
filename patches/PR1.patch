@@ -224,7 +224,7 @@ index 000000000..1f9c5318f
 +
 +
 +
-+#define NGX_LISTEN_BACKLOG        -1
++#define NGX_LISTEN_BACKLOG        SOMAXCONN
 +
 +
 +#ifdef __DragonFly__

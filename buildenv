@@ -1,5 +1,5 @@
 # bump: nginx-version /NGINX_VERSION="(.*)"/ https://nginx.org/en/download.html|re:/nginx-([\d.]+)/$1/|semver:*
-NGINX_VERSION="1.29.4"
+NGINX_VERSION="1.29.5"
 
 export ZOPEN_STABLE_URL="https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz"
 export ZOPEN_STABLE_DEPS="zoslib make libpcre2 zlib openssl perl which"
